@@ -71,7 +71,6 @@ extern NSString *const kCATransition;
   CARenderer * _renderer;
   CALayer * _superlayer;
   NSArray * _sublayers;
-  CGRect _frame;
   CGRect _bounds;
   CGPoint _anchorPoint;
   CGPoint _position;

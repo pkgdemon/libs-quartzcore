@@ -36,6 +36,7 @@ NSString *kCATransactionAnimationTimingFunction= @"animationTimingFunction";
 NSString *kCATransactionDisableActions = @"disableActions";
 
 static NSMutableArray *transactionStack = nil;
+static void (^_completionBlock)(void) = nil;
 
 @interface CATransaction ()
 
@@ -73,6 +74,15 @@ static NSMutableArray *transactionStack = nil;
   [topTransaction commit];
 
   [transactionStack removeObjectAtIndex: [transactionStack count]-1];
+
+  /* Call and clear the completion block after commit */
+  if (_completionBlock)
+    {
+      void (^block)(void) = _completionBlock;
+      _completionBlock = nil;
+      block();
+      Block_release(block);
+    }
 }
 
 + (void) flush
@@ -121,6 +131,19 @@ static NSMutableArray *transactionStack = nil;
 + (void) setDisableActions: (BOOL)disableActions
 {
     [[self topTransaction] setDisableActions: disableActions];
+}
+
++ (void (^)(void)) completionBlock
+{
+  return _completionBlock;
+}
+
++ (void) setCompletionBlock: (void (^)(void))block
+{
+  void (^old)(void) = _completionBlock;
+  _completionBlock = Block_copy(block);
+  if (old)
+    Block_release(old);
 }
 
 + (id) valueForKey: (NSString *)key

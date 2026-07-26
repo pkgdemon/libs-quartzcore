@@ -248,7 +248,7 @@ bool CATransform3DIsAffine(CATransform3D t)
 
 CGAffineTransform CATransform3DGetAffineTransform(CATransform3D t)
 {
-  return CGAffineTransformMake(t.m11, t.m12, t.m21, t.m22, t.m41, t.m42);
+  return (CGAffineTransform){t.m11, t.m12, t.m21, t.m22, t.m41, t.m42};
 }
 
 @implementation NSValue (CATransform3D)

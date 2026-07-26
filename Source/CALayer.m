@@ -44,6 +44,10 @@
 #import <CoreGraphics/CoreGraphics.h>
 #endif
 #import <stdlib.h>
+#import <float.h>
+
+/* Forward declaration in case the installed system header lacks it */
+extern CGAffineTransform CATransform3DGetAffineTransform(CATransform3D t);
 
 static CFTimeInterval currentFrameBeginTime = 0;
 
@@ -79,7 +83,6 @@ NSString *const kCAGravityBottomRight = @"CAGravityBottomRight";
 @synthesize renderer=_renderer;
 @synthesize superlayer=_superlayer;
 @synthesize sublayers=_sublayers;
-@synthesize frame=_frame;
 @synthesize bounds=_bounds;
 @synthesize anchorPoint=_anchorPoint;
 @synthesize position=_position;
@@ -478,6 +481,45 @@ GSCA_OBSERVABLE_SETTER(setShadowOffset, CGSize, shadowOffset, CGSizeEqualToSize)
 }
 
 #endif
+
+/* *** computed frame property *** */
+- (CGRect)frame {
+  if (CATransform3DIsIdentity(_transform)) {
+    /* Fast path: frame = bounds offset by (position - anchorPoint*bounds.size) */
+    CGFloat x = _position.x - _anchorPoint.x * _bounds.size.width;
+    CGFloat y = _position.y - _anchorPoint.y * _bounds.size.height;
+    return CGRectMake(x, y, _bounds.size.width, _bounds.size.height);
+  }
+  /* Slow path: transform the bounds rect corners, compute AABB */
+  CGAffineTransform t = CATransform3DGetAffineTransform(_transform);
+  CGPoint corners[4];
+  corners[0] = CGPointMake(_bounds.origin.x, _bounds.origin.y);
+  corners[1] = CGPointMake(CGRectGetMaxX(_bounds), _bounds.origin.y);
+  corners[2] = CGPointMake(_bounds.origin.x, CGRectGetMaxY(_bounds));
+  corners[3] = CGPointMake(CGRectGetMaxX(_bounds), CGRectGetMaxY(_bounds));
+
+  /* Transform each corner relative to anchorPoint, then offset by position */
+  CGFloat minX = CGFLOAT_MAX, minY = CGFLOAT_MAX;
+  CGFloat maxX = -CGFLOAT_MAX, maxY = -CGFLOAT_MAX;
+  for (int i = 0; i < 4; i++) {
+    CGFloat cx = corners[i].x - _bounds.origin.x - _anchorPoint.x * _bounds.size.width;
+    CGFloat cy = corners[i].y - _bounds.origin.y - _anchorPoint.y * _bounds.size.height;
+    CGFloat tx = t.a * cx + t.c * cy + _position.x;
+    CGFloat ty = t.b * cx + t.d * cy + _position.y;
+    if (tx < minX) minX = tx;
+    if (ty < minY) minY = ty;
+    if (tx > maxX) maxX = tx;
+    if (ty > maxY) maxY = ty;
+  }
+  return CGRectMake(minX, minY, maxX - minX, maxY - minY);
+}
+
+- (void)setFrame:(CGRect)frame {
+  /* Setting frame updates bounds.size and position */
+  _bounds.size = frame.size;
+  _position.x = frame.origin.x + _anchorPoint.x * frame.size.width;
+  _position.y = frame.origin.y + _anchorPoint.y * frame.size.height;
+}
 
 - (void) setBounds: (CGRect)bounds
 {
@@ -1225,16 +1267,35 @@ GSCA_OBSERVABLE_SETTER(setShadowOffset, CGSize, shadowOffset, CGSizeEqualToSize)
   [super setValue: value forUndefinedKey: key];
 }
 
-/* Unimplemented functions: */
-#if 0
-- (CGPoint) convertPoint: (CGPoint)p fromLayer: (CALayer *)l;
-- (CGPoint) convertPoint: (CGPoint)p toLayer: (CALayer *)l;
-- (CGRect) convertRect: (CGRect)p fromLayer: (CALayer *)l;
-- (CGRect) convertRect: (CGRect)p toLayer: (CALayer *)l;
-- (void)setNeedsLayout;
-- (void)layoutIfNeeded;
+/* Geometry conversion */
+- (CGPoint) convertPoint: (CGPoint)point fromLayer: (CALayer *)layer
+{
+  if (layer == nil) return point; /* from root coordinates */
+  /* Simple: offset by position difference */
+  CGPoint srcPos = [layer position];
+  CGPoint dstPos = [self position];
+  return CGPointMake(point.x + srcPos.x - dstPos.x, point.y + srcPos.y - dstPos.y);
+}
 
-#endif
+- (CGPoint) convertPoint: (CGPoint)point toLayer: (CALayer *)layer
+{
+  if (layer == nil) return point;
+  CGPoint srcPos = [self position];
+  CGPoint dstPos = [layer position];
+  return CGPointMake(point.x + srcPos.x - dstPos.x, point.y + srcPos.y - dstPos.y);
+}
+
+- (CGRect) convertRect: (CGRect)rect fromLayer: (CALayer *)layer
+{
+  CGPoint origin = [self convertPoint: rect.origin fromLayer: layer];
+  return CGRectMake(origin.x, origin.y, rect.size.width, rect.size.height);
+}
+
+- (CGRect) convertRect: (CGRect)rect toLayer: (CALayer *)layer
+{
+  CGPoint origin = [self convertPoint: rect.origin toLayer: layer];
+  return CGRectMake(origin.x, origin.y, rect.size.width, rect.size.height);
+}
 
 /* TODO:
  * -setSublayers: needs to correctly unset superlayer from old values and set new superlayer for new values.

@@ -58,6 +58,9 @@
 + (BOOL) disableActions;
 + (void) setDisableActions: (BOOL)disableActions;
 
++ (void (^)(void)) completionBlock;
++ (void) setCompletionBlock: (void (^)(void))block;
+
 @end
 
 extern NSString *kCATransactionAnimationDuration;
